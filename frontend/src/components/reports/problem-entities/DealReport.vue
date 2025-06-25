@@ -1,5 +1,19 @@
 <template>
 	<div>
+		<div class="d-flex align-center my-4">
+			<v-btn
+				@click="fetchAllDeals"
+				:loading="isFetchingAllDeals"
+				color="primary"
+				variant="tonal"
+				size="small"
+			>
+				Получить общее количество сделок
+			</v-btn>
+			<span v-if="allDealsCount !== null" class="ml-4 text-subtitle-1">
+				<strong>Всего в Битрикс24:</strong> {{ allDealsCount }}
+			</span>
+		</div>
 		<v-data-table
 			v-model:items-per-page="itemsPerPage"
 			v-model:page="currentPage"
@@ -71,7 +85,11 @@
 
 <script setup>
 import { computed, inject, ref, watch } from "vue"
-import { executeBatchRequest, fetchEntities } from "../../../utils/bx24Api"
+import {
+	callBX24Method,
+	executeBatchRequest,
+	fetchEntities,
+} from "../../../utils/bx24Api"
 
 const props = defineProps({
 	filters: {
@@ -97,6 +115,8 @@ const itemsPerPageOptions = [
 ]
 const isLoading = ref(false)
 const dealData = ref([])
+const allDealsCount = ref(null)
+const isFetchingAllDeals = ref(false)
 
 // Pagination computed property
 const pageCount = computed(() => {
@@ -123,6 +143,23 @@ const headers = ref([
 const openDealCard = dealId => {
 	if (BX24) {
 		BX24.openPath(`/crm/deal/details/${dealId}/`)
+	}
+}
+
+// Fetch all deals count
+const fetchAllDeals = async () => {
+	isFetchingAllDeals.value = true
+	allDealsCount.value = null
+	try {
+		// Чтобы получить только общее количество, мы делаем запрос без пагинации
+		// и читаем свойство total из ответа.
+		const response = await callBX24Method(BX24, "crm.deal.list", {}, false)
+		allDealsCount.value = response.total
+	} catch (error) {
+		console.error("Error fetching all deals count:", error)
+		// Optionally, set an error message to display to the user
+	} finally {
+		isFetchingAllDeals.value = false
 	}
 }
 

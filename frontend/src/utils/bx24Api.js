@@ -62,8 +62,8 @@ export const callBX24Method = (
  * @returns {Promise<Array>} - Promise с результатами вызова метода
  */
 export const callBX24MethodBatch = async (BX24, method, params = {}) => {
-	// Первый запрос для получения общего количества элементов
 	try {
+		// Первый запрос для получения общего количества элементов
 		const initialResponse = await callBX24Method(BX24, method, params, false)
 
 		const totalItems = initialResponse.total
@@ -74,27 +74,34 @@ export const callBX24MethodBatch = async (BX24, method, params = {}) => {
 			return initialData
 		}
 
-		// Иначе готовим пакетные запросы
-		const batchRequests = {}
+		const allResults = [...initialData]
+		const batchLimit = 50 // Лимит команд в одном пакете
+		let batchRequests = {}
+		let commandCounter = 0
 
-		// Генерируем запросы для получения всех данных
+		// Генерируем и выполняем запросы чанками, не превышая лимит
 		for (let start = 50; start < totalItems; start += 50) {
 			const batchParams = { ...params, start }
 			const batchKey = `${method}_${start}`
 			batchRequests[batchKey] = { method, params: batchParams }
-		}
+			commandCounter++
 
-		// Выполняем пакетный запрос через BX24.callBatch
-		const batchResults = await executeBatchRequest(BX24, batchRequests)
+			// Выполняем чанк, если достигли лимита или это последняя итерация
+			if (commandCounter === batchLimit || start + 50 >= totalItems) {
+				const batchResults = await executeBatchRequest(BX24, batchRequests)
 
-		// Объединяем все результаты
-		const allResults = [...initialData]
+				// Объединяем результаты
+				Object.values(batchResults).forEach(result => {
+					if (Array.isArray(result)) {
+						allResults.push(...result)
+					}
+				})
 
-		Object.values(batchResults).forEach(result => {
-			if (Array.isArray(result)) {
-				allResults.push(...result)
+				// Сбрасываем счетчик и объект для следующего чанка
+				batchRequests = {}
+				commandCounter = 0
 			}
-		})
+		}
 
 		return allResults
 	} catch (error) {

@@ -21,54 +21,16 @@
 					></v-select>
 				</v-col>
 				<v-col cols="12" sm="12" md="3" style="max-width: 360px">
-					<v-menu
-						v-model="dateMenu"
-						:close-on-content-click="false"
-						transition="scale-transition"
-						min-width="auto"
-						max-width="360px"
-						@update:model-value="onDateMenuToggle"
-					>
-						<template v-slot:activator="{ props }">
-							<v-text-field
-								v-bind="props"
-								:model-value="formattedDateRange"
-								label="Период"
-								prepend-inner-icon="mdi-calendar"
-								readonly
-								variant="outlined"
-								density="comfortable"
-								clearable
-								@click:clear="clearDateRange"
-								style="width: 360px; max-width: 360px"
-								class="date-picker-field"
-							></v-text-field>
-						</template>
-						<v-card
-							style="width: 100%; max-width: 360px; box-sizing: border-box"
-						>
-							<v-card-text>
-								<v-date-picker
-									v-model="tempDateRange"
-									multiple="range"
-									color="primary"
-									show-adjacent-months
-									:first-day-of-week="1"
-									hide-header
-									locale="ru"
-									:day-format="date => new Date(date).getDate()"
-									style="width: 100%; max-width: 360px; box-sizing: border-box"
-								></v-date-picker>
-							</v-card-text>
-							<v-card-actions>
-								<v-spacer></v-spacer>
-								<v-btn variant="text" @click="dateMenu = false"> Отмена </v-btn>
-								<v-btn color="primary" variant="text" @click="applyDateRange">
-									Применить
-								</v-btn>
-							</v-card-actions>
-						</v-card>
-					</v-menu>
+					<v-date-input
+						v-model="dateRange"
+						label="Период"
+						multiple="range"
+						variant="outlined"
+						density="comfortable"
+						clearable
+						locale="ru"
+						style="max-width: 360px"
+					></v-date-input>
 				</v-col>
 			</v-row>
 
@@ -207,8 +169,6 @@ const BX24 = inject("BX24")
 // Filters
 const selectedEntityType = ref("companies")
 const dateRange = ref([])
-const tempDateRange = ref([])
-const dateMenu = ref(false)
 const faqDialog = ref(false)
 
 // Опции для селектов
@@ -217,32 +177,6 @@ const entityTypes = [
 	{ title: "Контакты", value: "contacts" },
 	{ title: "Сделки", value: "deals" },
 ]
-
-const onDateMenuToggle = isOpen => {
-	if (isOpen) {
-		// Clone the array to avoid reactivity issues
-		tempDateRange.value = [...dateRange.value]
-	}
-}
-
-const applyDateRange = () => {
-	dateRange.value = [...tempDateRange.value]
-	dateMenu.value = false
-}
-
-// Форматирование диапазона дат для отображения
-const formattedDateRange = computed(() => {
-	if (!dateRange.value || dateRange.value.length === 0) {
-		return ""
-	}
-
-	if (dateRange.value.length === 1) {
-		return formatDate(dateRange.value[0])
-	}
-	return `${formatDate(dateRange.value[0])} — ${formatDate(
-		dateRange.value[dateRange.value.length - 1]
-	)}`
-})
 
 // Общие фильтры для передачи в дочерние компоненты
 const filters = computed(() => {
@@ -275,17 +209,10 @@ const filters = computed(() => {
 
 	return filterObj
 })
-
-const clearDateRange = () => {
-	dateRange.value = []
-}
 </script>
 
 <style>
 .date-picker-field {
 	max-width: 360px;
-}
-.v-input__control {
-	max-height: 48px;
 }
 </style>

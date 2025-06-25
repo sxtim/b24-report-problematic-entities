@@ -41,6 +41,9 @@ docker-compose up --build
 - Чтобы остановить и удалить контейнеры (освободить ресурсы), выполните:
   ```bash
   docker-compose down
+
+
+  docker system prune -a --volumes почистить докер
   ```
 
 ## Сборка для загрузки в Битрикс24
