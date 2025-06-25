@@ -117,6 +117,7 @@ const isLoading = ref(false)
 const dealData = ref([])
 const allDealsCount = ref(null)
 const isFetchingAllDeals = ref(false)
+let loadRequestToken = 0 // Токен для отмены "устаревших" запросов
 
 // Pagination computed property
 const pageCount = computed(() => {
@@ -165,109 +166,124 @@ const fetchAllDeals = async () => {
 
 // Load deal data
 const loadData = async () => {
+	loadRequestToken++
+	const currentToken = loadRequestToken
 	isLoading.value = true
+	dealData.value = []
+	let isFirstChunk = true
 
 	try {
-		// Загрузка сделок с учетом фильтров
 		const dealFilter = { ...props.filters }
 
-		const deals = await fetchEntities(BX24, "crm.deal.list", {
-			select: ["ID", "TITLE", "COMPANY_ID"],
-			filter: dealFilter,
-		})
+		const processDealsChunk = async deals => {
+			if (currentToken !== loadRequestToken) return // Запрос устарел
 
-		if (deals.length === 0) {
-			dealData.value = []
-			isLoading.value = false
-			return
-		}
+			if (deals.length === 0) {
+				return
+			}
 
-		// Получаем все контакты для всех сделок
-		const dealIds = deals.map(d => d.ID)
-		const batchSize = 50
-		const allDealContactLinks = {}
-
-		for (let i = 0; i < dealIds.length; i += batchSize) {
-			const chunkIds = dealIds.slice(i, i + batchSize)
+			// 1. Сначала эффективно загружаем все связанные данные для всей порции
+			const dealIds = deals.map(d => d.ID)
 			const contactCheckBatch = {}
-			chunkIds.forEach(id => {
+			dealIds.forEach(id => {
 				contactCheckBatch[`c_${id}`] = {
 					method: "crm.deal.contact.items.get",
 					params: { id },
 				}
 			})
-			const chunkResults = await executeBatchRequest(BX24, contactCheckBatch)
-			Object.assign(allDealContactLinks, chunkResults)
+			const dealContactLinks = await executeBatchRequest(
+				BX24,
+				contactCheckBatch
+			)
+
+			const contactIds = [
+				...new Set(
+					Object.values(dealContactLinks)
+						.flat()
+						.map(item => item.CONTACT_ID)
+				),
+			]
+
+			let contactsWithCompanies = []
+			if (contactIds.length > 0) {
+				contactsWithCompanies = await fetchEntities(BX24, "crm.contact.list", {
+					select: ["ID", "COMPANY_ID"],
+					filter: { ID: contactIds },
+				})
+			}
+			const contactCompanyMap = contactsWithCompanies.reduce((acc, contact) => {
+				acc[contact.ID] = contact.COMPANY_ID
+				return acc
+			}, {})
+
+			// 2. Теперь обрабатываем и отображаем данные мелкими под-порциями
+			const subChunkSize = 10
+			for (let i = 0; i < deals.length; i += subChunkSize) {
+				const subChunk = deals.slice(i, i + subChunkSize)
+
+				const problemDeals = subChunk
+					.map(deal => {
+						const problems = []
+						const dealContacts = dealContactLinks[`c_${deal.ID}`] || []
+
+						if (dealContacts.length === 0) {
+							problems.push("Не привязан контакт")
+						}
+
+						let hasCompany = !!deal.COMPANY_ID && deal.COMPANY_ID !== "0"
+						if (!hasCompany) {
+							const hasCompanyThroughContact = dealContacts.some(
+								contact => !!contactCompanyMap[contact.CONTACT_ID]
+							)
+							if (hasCompanyThroughContact) {
+								hasCompany = true
+							}
+						}
+
+						if (!hasCompany) {
+							problems.push("Не привязана компания")
+						}
+
+						if (problems.length > 0) {
+							return {
+								id: deal.ID,
+								title: deal.TITLE,
+								problems: problems,
+							}
+						}
+						return null
+					})
+					.filter(deal => deal !== null)
+
+				// Проверка токена перед добавлением данных
+				if (currentToken !== loadRequestToken) return
+
+				dealData.value.push(...problemDeals)
+
+				if (isFirstChunk) {
+					isLoading.value = false
+					isFirstChunk = false
+				}
+
+				// Даем UI возможность обновиться перед следующей под-порцией
+				await new Promise(resolve => setTimeout(resolve, 50))
+			}
 		}
-		const dealContactLinks = allDealContactLinks
 
-		// Собираем уникальные ID контактов
-		const contactIds = [
-			...new Set(
-				Object.values(dealContactLinks)
-					.flat()
-					.map(item => item.CONTACT_ID)
-			),
-		]
-
-		let contactsWithCompanies = []
-		if (contactIds.length > 0) {
-			contactsWithCompanies = await fetchEntities(BX24, "crm.contact.list", {
-				select: ["ID", "COMPANY_ID"],
-				filter: { ID: contactIds },
-			})
-		}
-
-		const contactCompanyMap = contactsWithCompanies.reduce((acc, contact) => {
-			acc[contact.ID] = contact.COMPANY_ID
-			return acc
-		}, {})
-
-		// Проверка на проблемы в сделках
-		const problemDeals = deals
-			.map(deal => {
-				const problems = []
-				const dealContacts = dealContactLinks[`c_${deal.ID}`] || []
-
-				// 1. Проверяем привязку контакта
-				if (dealContacts.length === 0) {
-					problems.push("Не привязан контакт")
-				}
-
-				// 2. Проверяем привязку компании
-				let hasCompany = !!deal.COMPANY_ID && deal.COMPANY_ID !== "0"
-				if (!hasCompany) {
-					// Проверяем компанию через контакты
-					const hasCompanyThroughContact = dealContacts.some(
-						contact => !!contactCompanyMap[contact.CONTACT_ID]
-					)
-					if (hasCompanyThroughContact) {
-						hasCompany = true
-					}
-				}
-
-				if (!hasCompany) {
-					problems.push("Не привязана компания")
-				}
-
-				// Если есть проблемы, добавляем сделку в список
-				if (problems.length > 0) {
-					return {
-						id: deal.ID,
-						title: deal.TITLE,
-						problems: problems,
-					}
-				}
-
-				return null
-			})
-			.filter(deal => deal !== null)
-
-		dealData.value = problemDeals
+		// Запускаем загрузку всех сделок с пошаговой обработкой
+		await fetchEntities(BX24, "crm.deal.list", {
+			select: ["ID", "TITLE", "COMPANY_ID"],
+			filter: dealFilter,
+			onProgress: processDealsChunk,
+		})
 	} catch (error) {
-		console.error("Error loading deal data:", error)
+		if (currentToken === loadRequestToken) {
+			console.error("Error loading deal data:", error)
+		}
 	} finally {
-		isLoading.value = false
+		if (currentToken === loadRequestToken) {
+			isLoading.value = false
+		}
 	}
 }
 

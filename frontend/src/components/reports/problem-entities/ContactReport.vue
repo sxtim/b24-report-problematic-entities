@@ -101,6 +101,7 @@ const itemsPerPageOptions = [
 ]
 const isLoading = ref(false)
 const contactData = ref([])
+let loadRequestToken = 0 // Токен для отмены "устаревших" запросов
 
 // Pagination computed property
 const pageCount = computed(() => {
@@ -132,87 +133,96 @@ const openContactCard = contactId => {
 
 // Load contact data
 const loadData = async () => {
+	loadRequestToken++
+	const currentToken = loadRequestToken
 	isLoading.value = true
+	contactData.value = []
+	let isFirstChunk = true
 
 	try {
-		// Загрузка контактов с учетом фильтров
-		const dealFilter = { ...props.filters }
+		const contactFilter = { ...props.filters }
 
-		const contacts = await fetchEntities(BX24, "crm.contact.list", {
-			select: ["ID", "NAME", "LAST_NAME", "ADDRESS", "PHONE", "EMAIL"],
-			filter: dealFilter,
-		})
+		const processContactsChunk = async contacts => {
+			if (currentToken !== loadRequestToken) return // Запрос устарел
 
-		if (contacts.length === 0) {
-			contactData.value = []
-			isLoading.value = false
-			return
-		}
+			if (contacts.length === 0) {
+				return
+			}
 
-		// Получаем реквизиты для всех контактов
-		const contactIds = contacts.map(c => c.ID)
-		const batchSize = 50
-		const allRequisiteResults = {}
+			const contactIds = contacts.map(c => c.ID)
+			const batchSize = 50
+			const allRequisiteResults = {}
 
-		for (let i = 0; i < contactIds.length; i += batchSize) {
-			const chunkIds = contactIds.slice(i, i + batchSize)
-			const requisiteCheckBatch = {}
-			chunkIds.forEach(id => {
-				requisiteCheckBatch[`r_${id}`] = {
-					method: "crm.requisite.list",
-					params: {
-						filter: { ENTITY_TYPE_ID: 3, ENTITY_ID: id },
-					},
-				}
-			})
-			const chunkResults = await executeBatchRequest(BX24, requisiteCheckBatch)
-			Object.assign(allRequisiteResults, chunkResults)
-		}
-
-		// Проверка на проблемы в контактах
-		const problemContacts = contacts
-			.map(contact => {
-				const problems = []
-
-				// Проверяем наличие адреса
-				if (!contact.ADDRESS || contact.ADDRESS.trim() === "") {
-					problems.push("Нет адреса")
-				}
-
-				// Проверяем наличие реквизитов
-				const contactRequisites = allRequisiteResults[`r_${contact.ID}`]
-				if (!contactRequisites || contactRequisites.length === 0) {
-					problems.push("Нет реквизитов")
-				}
-
-				// Проверяем наличие телефона
-				if (!contact.PHONE || contact.PHONE.length === 0) {
-					problems.push("Нет телефона")
-				}
-
-				// Проверяем наличие email
-				if (!contact.EMAIL || contact.EMAIL.length === 0) {
-					problems.push("Нет email")
-				}
-
-				// Если есть проблемы, добавляем контакт в список
-				if (problems.length > 0) {
-					return {
-						id: contact.ID,
-						title: `${contact.NAME} ${contact.LAST_NAME}`.trim(),
-						problems: problems,
+			// Пакетные запросы для реквизитов
+			for (let i = 0; i < contactIds.length; i += batchSize) {
+				const chunkIds = contactIds.slice(i, i + batchSize)
+				const requisiteCheckBatch = {}
+				chunkIds.forEach(id => {
+					requisiteCheckBatch[`r_${id}`] = {
+						method: "crm.requisite.list",
+						params: {
+							filter: { ENTITY_TYPE_ID: 3, ENTITY_ID: id },
+						},
 					}
-				}
+				})
+				const chunkResults = await executeBatchRequest(
+					BX24,
+					requisiteCheckBatch
+				)
+				Object.assign(allRequisiteResults, chunkResults)
+			}
 
-				return null
-			})
-			.filter(contact => contact !== null)
+			const problemContacts = contacts
+				.map(contact => {
+					const problems = []
+					if (!contact.ADDRESS || contact.ADDRESS.trim() === "") {
+						problems.push("Нет адреса")
+					}
+					const contactRequisites = allRequisiteResults[`r_${contact.ID}`]
+					if (!contactRequisites || contactRequisites.length === 0) {
+						problems.push("Нет реквизитов")
+					}
+					if (!contact.PHONE || contact.PHONE.length === 0) {
+						problems.push("Нет телефона")
+					}
+					if (!contact.EMAIL || contact.EMAIL.length === 0) {
+						problems.push("Нет email")
+					}
 
-		contactData.value = problemContacts
+					if (problems.length > 0) {
+						return {
+							id: contact.ID,
+							title: `${contact.NAME} ${contact.LAST_NAME}`.trim(),
+							problems: problems,
+						}
+					}
+					return null
+				})
+				.filter(contact => contact !== null)
+
+			// Проверка токена перед добавлением данных
+			if (currentToken !== loadRequestToken) return
+			contactData.value.push(...problemContacts)
+
+			if (isFirstChunk) {
+				isLoading.value = false
+				isFirstChunk = false
+			}
+		}
+
+		await fetchEntities(BX24, "crm.contact.list", {
+			select: ["ID", "NAME", "LAST_NAME", "ADDRESS", "PHONE", "EMAIL"],
+			filter: contactFilter,
+			onProgress: processContactsChunk,
+		})
 	} catch (error) {
-		console.error("Error loading contact data:", error)
+		if (currentToken === loadRequestToken) {
+			console.error("Error loading contact data:", error)
+		}
 	} finally {
-		isLoading.value = false
+		if (currentToken === loadRequestToken) {
+			isLoading.value = false
+		}
 	}
 }
 

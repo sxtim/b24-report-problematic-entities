@@ -43,7 +43,11 @@ export default defineConfig(({ command }) => {
 		// Explicitly set the app type to 'spa' to ensure fallback to index.html
 		// This is crucial for the Bitrix24 dev environment.
 		appType: "spa",
-		plugins: [vue(), vuetify({ autoImport: true }), bitrixPostRequestPlugin()],
+		plugins: [
+			vue(),
+			vuetify({ autoImport: { labs: true } }),
+			bitrixPostRequestPlugin(),
+		],
 		server: {
 			host: "0.0.0.0", // Allow access from outside the container
 			port: 5173,

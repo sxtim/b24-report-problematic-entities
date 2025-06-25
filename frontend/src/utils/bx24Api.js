@@ -59,9 +59,15 @@ export const callBX24Method = (
  * @param {Object} BX24 - Инициализированный объект BX24
  * @param {string} method - Имя метода API Битрикс24
  * @param {Object} params - Параметры для вызова метода
+ * @param {Function} onProgress - Опциональный колбэк для обработки данных по частям
  * @returns {Promise<Array>} - Promise с результатами вызова метода
  */
-export const callBX24MethodBatch = async (BX24, method, params = {}) => {
+export const callBX24MethodBatch = async (
+	BX24,
+	method,
+	params = {},
+	onProgress = null
+) => {
 	try {
 		// Первый запрос для получения общего количества элементов
 		const initialResponse = await callBX24Method(BX24, method, params, false)
@@ -69,12 +75,22 @@ export const callBX24MethodBatch = async (BX24, method, params = {}) => {
 		const totalItems = initialResponse.total
 		const initialData = initialResponse.data
 
-		// Если все данные получены в первом запросе или их нет, возвращаем результат
-		if (totalItems <= 50 || totalItems === 0) {
+		// Если данных нет, выходим
+		if (totalItems === 0) {
+			return []
+		}
+
+		// Если есть onProgress, сразу обрабатываем первую порцию
+		if (onProgress) {
+			await onProgress(initialData)
+		}
+
+		// Если все данные получены в первом запросе, возвращаем результат
+		if (totalItems <= 50) {
 			return initialData
 		}
 
-		const allResults = [...initialData]
+		const allResults = onProgress ? [] : [...initialData]
 		const batchLimit = 50 // Лимит команд в одном пакете
 		let batchRequests = {}
 		let commandCounter = 0
@@ -90,12 +106,24 @@ export const callBX24MethodBatch = async (BX24, method, params = {}) => {
 			if (commandCounter === batchLimit || start + 50 >= totalItems) {
 				const batchResults = await executeBatchRequest(BX24, batchRequests)
 
-				// Объединяем результаты
-				Object.values(batchResults).forEach(result => {
-					if (Array.isArray(result)) {
-						allResults.push(...result)
+				if (onProgress) {
+					// Обрабатываем каждый результат из пакета индивидуально
+					for (const key in batchResults) {
+						const resultData = batchResults[key]
+						if (Array.isArray(resultData) && resultData.length > 0) {
+							await onProgress(resultData)
+						}
 					}
-				})
+				} else {
+					// Собираем все результаты, если onProgress не предоставлен
+					const chunkData = []
+					Object.values(batchResults).forEach(result => {
+						if (Array.isArray(result)) {
+							chunkData.push(...result)
+						}
+					})
+					allResults.push(...chunkData)
+				}
 
 				// Сбрасываем счетчик и объект для следующего чанка
 				batchRequests = {}
@@ -157,7 +185,13 @@ export const executeBatchRequest = (BX24, batch) => {
  * @returns {Promise<Array>} - Promise с результатами запроса
  */
 export const fetchEntities = async (BX24, entityType, options = {}) => {
-	const { select = [], filter = {}, order = {}, useBatch = true } = options
+	const {
+		select = [],
+		filter = {},
+		order = {},
+		useBatch = true,
+		onProgress = null,
+	} = options
 
 	const params = {
 		select,
@@ -172,7 +206,7 @@ export const fetchEntities = async (BX24, entityType, options = {}) => {
 	// Для больших выборок используем пакетные запросы только для методов с .list
 	if (useBatch && methodHasList) {
 		try {
-			return await callBX24MethodBatch(BX24, method, params)
+			return await callBX24MethodBatch(BX24, method, params, onProgress)
 		} catch (error) {
 			console.warn(
 				`Ошибка при использовании пакетных запросов, переключаемся на обычный запрос: ${error.message}`

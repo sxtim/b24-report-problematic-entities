@@ -101,6 +101,7 @@ const itemsPerPageOptions = [
 ]
 const isLoading = ref(false)
 const companyData = ref([])
+let loadRequestToken = 0 // Токен для отмены "устаревших" запросов
 
 // Pagination computed property
 const pageCount = computed(() => {
@@ -132,105 +133,113 @@ const openCompanyCard = companyId => {
 
 // Load company data
 const loadData = async () => {
+	loadRequestToken++
+	const currentToken = loadRequestToken
 	isLoading.value = true
+	companyData.value = []
+	let isFirstChunk = true
 
 	try {
-		// Загрузка компаний с учетом фильтров
-		const dealFilter = { ...props.filters }
+		const companyFilter = { ...props.filters }
 
-		const companies = await fetchEntities(BX24, "crm.company.list", {
-			select: ["ID", "TITLE", "ADDRESS", "PHONE"],
-			filter: dealFilter,
-		})
+		const processCompaniesChunk = async companies => {
+			if (currentToken !== loadRequestToken) return // Запрос устарел
 
-		if (companies.length === 0) {
-			companyData.value = []
-			isLoading.value = false
-			return
-		}
+			if (companies.length === 0) {
+				return
+			}
 
-		// Разбиваем компании на части для пакетных запросов
-		const companyIds = companies.map(c => c.ID)
-		const batchSize = 50
-		const allContactResults = {}
+			const companyIds = companies.map(c => c.ID)
+			const batchSize = 50
+			const allContactResults = {}
+			const allRequisiteResults = {}
 
-		for (let i = 0; i < companyIds.length; i += batchSize) {
-			const chunkIds = companyIds.slice(i, i + batchSize)
-			const contactCheckBatch = {}
-			chunkIds.forEach(id => {
-				contactCheckBatch[`c_${id}`] = {
-					method: "crm.company.contact.items.get",
-					params: { id },
-				}
-			})
-
-			const chunkResults = await executeBatchRequest(BX24, contactCheckBatch)
-			Object.assign(allContactResults, chunkResults)
-		}
-
-		const contactResults = allContactResults
-
-		// Получаем реквизиты для всех компаний
-		const allRequisiteResults = {}
-		for (let i = 0; i < companyIds.length; i += batchSize) {
-			const chunkIds = companyIds.slice(i, i + batchSize)
-			const requisiteCheckBatch = {}
-			chunkIds.forEach(id => {
-				requisiteCheckBatch[`r_${id}`] = {
-					method: "crm.requisite.list",
-					params: {
-						filter: { ENTITY_TYPE_ID: 4, ENTITY_ID: id }, // 4 is for Company
-					},
-				}
-			})
-			const chunkResults = await executeBatchRequest(BX24, requisiteCheckBatch)
-			Object.assign(allRequisiteResults, chunkResults)
-		}
-
-		// Проверка на проблемы в компаниях
-		const problemCompanies = companies
-			.map(company => {
-				const problems = []
-
-				// Проверяем наличие адреса
-				if (!company.ADDRESS || company.ADDRESS.trim() === "") {
-					problems.push("Нет адреса")
-				}
-
-				// Проверяем наличие реквизитов
-				const companyRequisites = allRequisiteResults[`r_${company.ID}`]
-				if (!companyRequisites || companyRequisites.length === 0) {
-					problems.push("Нет реквизитов")
-				}
-
-				// Проверяем наличие телефона
-				if (!company.PHONE || company.PHONE.length === 0) {
-					problems.push("Нет телефона")
-				}
-
-				const companyContacts = contactResults[`c_${company.ID}`]
-				if (!companyContacts || companyContacts.length === 0) {
-					problems.push("Не привязан контакт")
-				}
-
-				// Если есть проблемы, добавляем компанию в список
-				if (problems.length > 0) {
-					return {
-						id: company.ID,
-						title: company.TITLE,
-						problems: problems,
+			// Пакетные запросы для контактов
+			for (let i = 0; i < companyIds.length; i += batchSize) {
+				const chunkIds = companyIds.slice(i, i + batchSize)
+				const contactCheckBatch = {}
+				chunkIds.forEach(id => {
+					contactCheckBatch[`c_${id}`] = {
+						method: "crm.company.contact.items.get",
+						params: { id },
 					}
-				}
+				})
+				const chunkResults = await executeBatchRequest(BX24, contactCheckBatch)
+				Object.assign(allContactResults, chunkResults)
+			}
 
-				return null
-			})
-			.filter(company => company !== null)
+			// Пакетные запросы для реквизитов
+			for (let i = 0; i < companyIds.length; i += batchSize) {
+				const chunkIds = companyIds.slice(i, i + batchSize)
+				const requisiteCheckBatch = {}
+				chunkIds.forEach(id => {
+					requisiteCheckBatch[`r_${id}`] = {
+						method: "crm.requisite.list",
+						params: {
+							filter: { ENTITY_TYPE_ID: 4, ENTITY_ID: id },
+						},
+					}
+				})
+				const chunkResults = await executeBatchRequest(
+					BX24,
+					requisiteCheckBatch
+				)
+				Object.assign(allRequisiteResults, chunkResults)
+			}
 
-		companyData.value = problemCompanies
+			const problemCompanies = companies
+				.map(company => {
+					const problems = []
+					if (!company.ADDRESS || company.ADDRESS.trim() === "") {
+						problems.push("Нет адреса")
+					}
+					const companyRequisites = allRequisiteResults[`r_${company.ID}`]
+					if (!companyRequisites || companyRequisites.length === 0) {
+						problems.push("Нет реквизитов")
+					}
+					if (!company.PHONE || company.PHONE.length === 0) {
+						problems.push("Нет телефона")
+					}
+					const companyContacts = allContactResults[`c_${company.ID}`]
+					if (!companyContacts || companyContacts.length === 0) {
+						problems.push("Не привязан контакт")
+					}
+
+					if (problems.length > 0) {
+						return {
+							id: company.ID,
+							title: company.TITLE,
+							problems: problems,
+						}
+					}
+					return null
+				})
+				.filter(company => company !== null)
+
+			// Проверка токена перед добавлением данных
+			if (currentToken !== loadRequestToken) return
+			companyData.value.push(...problemCompanies)
+
+			if (isFirstChunk) {
+				isLoading.value = false
+				isFirstChunk = false
+			}
+		}
+
+		// Запускаем загрузку всех компаний с пошаговой обработкой
+		await fetchEntities(BX24, "crm.company.list", {
+			select: ["ID", "TITLE", "ADDRESS", "PHONE"],
+			filter: companyFilter,
+			onProgress: processCompaniesChunk,
+		})
 	} catch (error) {
-		console.error("Error loading company data:", error)
+		if (currentToken === loadRequestToken) {
+			console.error("Error loading company data:", error)
+		}
 	} finally {
-		isLoading.value = false
+		if (currentToken === loadRequestToken) {
+			isLoading.value = false
+		}
 	}
 }
 

@@ -30,6 +30,8 @@
 						clearable
 						locale="ru"
 						style="max-width: 360px"
+						prepend-inner-icon="mdi-calendar"
+						prepend-icon=""
 					></v-date-input>
 				</v-col>
 			</v-row>

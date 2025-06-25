@@ -10,5 +10,9 @@
 	},
 	"devDependencies": {
 		"concurrently": "^8.2.2"
+	},
+	"dependencies": {
+		"vite-plugin-vuetify": "^2.1.1",
+		"vuetify": "^3.8.11"
 	}
 }
