@@ -32,7 +32,18 @@
 						style="max-width: 360px"
 						prepend-inner-icon="mdi-calendar"
 						prepend-icon=""
+						autocomplete="off"
+						placeholder=" "
 					></v-date-input>
+				</v-col>
+				<v-col cols="12" sm="12" md="3" style="max-width: 360px">
+					<v-btn
+						color="primary"
+						@click="applyFilter"
+						:disabled="!dateRange.length"
+					>
+						Применить
+					</v-btn>
 				</v-col>
 			</v-row>
 
@@ -171,6 +182,7 @@ const BX24 = inject("BX24")
 // Filters
 const selectedEntityType = ref("companies")
 const dateRange = ref([])
+const appliedDateRange = ref([]) // Фактически примененный диапазон дат
 const faqDialog = ref(false)
 
 // Опции для селектов
@@ -180,17 +192,24 @@ const entityTypes = [
 	{ title: "Сделки", value: "deals" },
 ]
 
+// Метод для применения фильтра по дате
+const applyFilter = () => {
+	appliedDateRange.value = [...dateRange.value]
+}
+
 // Общие фильтры для передачи в дочерние компоненты
 const filters = computed(() => {
 	const filterObj = {}
 
-	if (dateRange.value && dateRange.value.length > 0) {
+	if (appliedDateRange.value && appliedDateRange.value.length > 0) {
 		// Для диапазона дат
-		if (dateRange.value.length > 1) {
-			const startDate = new Date(dateRange.value[0])
+		if (appliedDateRange.value.length > 1) {
+			const startDate = new Date(appliedDateRange.value[0])
 			startDate.setHours(0, 0, 0, 0)
 
-			const endDate = new Date(dateRange.value[dateRange.value.length - 1])
+			const endDate = new Date(
+				appliedDateRange.value[appliedDateRange.value.length - 1]
+			)
 			endDate.setHours(23, 59, 59, 999)
 
 			filterObj[">=DATE_CREATE"] = startDate.toISOString()
@@ -198,7 +217,7 @@ const filters = computed(() => {
 		}
 		// Для одной даты
 		else {
-			const singleDate = new Date(dateRange.value[0])
+			const singleDate = new Date(appliedDateRange.value[0])
 			const startOfDay = new Date(singleDate)
 			startOfDay.setHours(0, 0, 0, 0)
 			const endOfDay = new Date(singleDate)
@@ -216,5 +235,8 @@ const filters = computed(() => {
 <style>
 .date-picker-field {
 	max-width: 360px;
+}
+.v-btn.v-btn--density-default {
+	margin-bottom: 14px;
 }
 </style>

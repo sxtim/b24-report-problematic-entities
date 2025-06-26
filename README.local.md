@@ -42,8 +42,8 @@ docker-compose up --build
   ```bash
   docker-compose down
 
-
-  docker system prune -a --volumes почистить докер
+  почистить докер
+  docker system prune -a --volumes 
   ```
 
 ## Сборка для загрузки в Битрикс24
