@@ -75,7 +75,11 @@
 
 <script setup>
 import { computed, inject, ref, watch } from "vue"
-import { executeBatchRequest, fetchEntities } from "../../../utils/bx24Api"
+import {
+	callBX24Method,
+	executeBatchRequest,
+	fetchEntities,
+} from "../../../utils/bx24Api"
 
 const props = defineProps({
 	filters: {
@@ -141,6 +145,25 @@ const loadData = async () => {
 
 	try {
 		const companyFilter = { ...props.filters }
+
+		// Widget logic: if a deal ID is passed, get the company from it first.
+		if (companyFilter.DEAL_ID_FOR_COMPANY) {
+			const dealId = companyFilter.DEAL_ID_FOR_COMPANY
+			delete companyFilter.DEAL_ID_FOR_COMPANY
+
+			const response = await callBX24Method(BX24, "crm.deal.get", {
+				id: dealId,
+			})
+			const deal = response.data[0]
+
+			if (deal && deal.COMPANY_ID) {
+				companyFilter.ID = deal.COMPANY_ID
+			} else {
+				// If deal has no company, there's nothing to show.
+				isLoading.value = false
+				return
+			}
+		}
 
 		const processCompaniesChunk = async companies => {
 			if (currentToken !== loadRequestToken) return // Запрос устарел

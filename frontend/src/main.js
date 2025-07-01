@@ -1,6 +1,6 @@
 import { createApp } from "vue"
 import App from "./App.vue"
-import { initBX24 } from "./utils/bx24"
+import { initBX24 } from "./utils/bx24.js"
 
 // Vuetify
 import "@mdi/font/css/materialdesignicons.css" // Import MDI icons

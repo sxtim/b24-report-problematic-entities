@@ -8,7 +8,7 @@
 		</v-card-title>
 		<v-card-text>
 			<!-- Filters -->
-			<v-row align="center">
+			<v-row v-if="!isWidgetMode" align="center">
 				<v-col cols="12" sm="6" md="3">
 					<v-select
 						label="Тип сущности"
@@ -156,10 +156,19 @@
 </template>
 
 <script setup>
-import { computed, inject, ref } from "vue"
+import { computed, defineProps, inject, onMounted, ref } from "vue"
 import CompanyReport from "./reports/problem-entities/CompanyReport.vue"
 import ContactReport from "./reports/problem-entities/ContactReport.vue"
 import DealReport from "./reports/problem-entities/DealReport.vue"
+
+const props = defineProps({
+	placementInfo: {
+		type: Object,
+		default: null,
+	},
+})
+
+const isWidgetMode = computed(() => !!props.placementInfo)
 
 // --- Helper Functions ---
 const formatDate = dateString => {
@@ -177,7 +186,7 @@ const error = ref(null)
 const BX24 = inject("BX24")
 
 // Filters
-const selectedEntityType = ref("companies")
+const selectedEntityType = ref(null)
 const dateRange = ref([])
 const appliedDateRange = ref([]) // Фактически примененный диапазон дат
 const faqDialog = ref(false)
@@ -189,6 +198,25 @@ const entityTypes = [
 	{ title: "Сделки", value: "deals" },
 ]
 
+// --- Widget Logic ---
+onMounted(() => {
+	if (isWidgetMode.value) {
+		const placement = props.placementInfo.placement
+		// By default, show deals related to a company/contact, or company related to a deal.
+		if (
+			placement === "CRM_COMPANY_DETAIL_TAB" ||
+			placement === "CRM_CONTACT_DETAIL_TAB"
+		) {
+			selectedEntityType.value = "deals"
+		} else if (placement === "CRM_DEAL_DETAIL_TAB") {
+			selectedEntityType.value = "companies"
+		}
+	} else {
+		// Default view for the main app
+		selectedEntityType.value = "companies"
+	}
+})
+
 // Метод для применения фильтра по дате
 const applyFilter = () => {
 	appliedDateRange.value = [...dateRange.value]
@@ -197,6 +225,29 @@ const applyFilter = () => {
 // Общие фильтры для передачи в дочерние компоненты
 const filters = computed(() => {
 	const filterObj = {}
+
+	if (isWidgetMode.value) {
+		const entityId = props.placementInfo.options.ID
+		const placement = props.placementInfo.placement
+
+		if (selectedEntityType.value === "deals") {
+			if (placement === "CRM_COMPANY_DETAIL_TAB") {
+				filterObj["COMPANY_ID"] = entityId
+			} else if (placement === "CRM_CONTACT_DETAIL_TAB") {
+				filterObj["CONTACT_ID"] = entityId
+			}
+		} else if (selectedEntityType.value === "companies") {
+			if (placement === "CRM_DEAL_DETAIL_TAB") {
+				// We need to find the company of this deal. This requires an extra call.
+				// This logic will be handled inside the CompanyReport component.
+				filterObj["DEAL_ID_FOR_COMPANY"] = entityId
+			}
+		} else if (selectedEntityType.value === "contacts") {
+			// Similar logic if we want to find contacts for a deal/company
+		}
+
+		return filterObj
+	}
 
 	if (appliedDateRange.value && appliedDateRange.value.length > 0) {
 		// Для диапазона дат
