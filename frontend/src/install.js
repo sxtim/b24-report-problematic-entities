@@ -3,15 +3,15 @@ import { initBX24 } from "./utils/bx24"
 const PLACEMENTS = [
 	{
 		placement: "CRM_DEAL_DETAIL_TAB",
-		title: "Проблемные сущности",
+		title: "Не заполненные поля",
 	},
 	{
 		placement: "CRM_COMPANY_DETAIL_TAB",
-		title: "Проблемные сущности",
+		title: "Не заполненные поля",
 	},
 	{
 		placement: "CRM_CONTACT_DETAIL_TAB",
-		title: "Проблемные сущности",
+		title: "Не заполненные поля",
 	},
 ]
 

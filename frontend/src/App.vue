@@ -1,14 +1,16 @@
 <template>
 	<v-app>
 		<v-main>
-			<ProblemEntitiesReport :placement-info="props.placementInfo" />
+			<WidgetReport v-if="isWidgetMode" :placement-info="props.placementInfo" />
+			<ProblemEntitiesReport v-else />
 		</v-main>
 	</v-app>
 </template>
 
 <script setup>
-import { defineProps } from "vue"
+import { computed, defineProps } from "vue"
 import ProblemEntitiesReport from "./components/ProblemEntitiesReport.vue"
+import WidgetReport from "./components/WidgetReport.vue"
 
 const props = defineProps({
 	placementInfo: {
@@ -16,6 +18,8 @@ const props = defineProps({
 		default: null,
 	},
 })
+
+const isWidgetMode = computed(() => !!props.placementInfo)
 </script>
 
 <style>

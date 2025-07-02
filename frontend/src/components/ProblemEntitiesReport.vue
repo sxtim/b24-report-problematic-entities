@@ -8,7 +8,7 @@
 		</v-card-title>
 		<v-card-text>
 			<!-- Filters -->
-			<v-row v-if="!isWidgetMode" align="center">
+			<v-row align="center">
 				<v-col cols="12" sm="6" md="3">
 					<v-select
 						label="Тип сущности"
@@ -51,26 +51,19 @@
 			<CompanyReport
 				v-if="selectedEntityType === 'companies'"
 				:filters="filters"
-				:loading="loading"
 			/>
 			<ContactReport
 				v-else-if="selectedEntityType === 'contacts'"
 				:filters="filters"
-				:loading="loading"
 			/>
 			<DealReport
 				v-else-if="selectedEntityType === 'deals'"
 				:filters="filters"
-				:loading="loading"
 			/>
 			<v-alert v-else type="info" density="compact" class="mt-4">
 				Выберите тип сущности для отображения отчета
 			</v-alert>
 		</v-card-text>
-
-		<v-alert v-if="error" type="error" density="compact">
-			{{ error }}
-		</v-alert>
 
 		<v-dialog v-model="faqDialog" max-width="600px">
 			<v-card>
@@ -156,101 +149,31 @@
 </template>
 
 <script setup>
-import { computed, defineProps, inject, onMounted, ref } from "vue"
+import { computed, ref } from "vue"
 import CompanyReport from "./reports/problem-entities/CompanyReport.vue"
 import ContactReport from "./reports/problem-entities/ContactReport.vue"
 import DealReport from "./reports/problem-entities/DealReport.vue"
 
-const props = defineProps({
-	placementInfo: {
-		type: Object,
-		default: null,
-	},
-})
-
-const isWidgetMode = computed(() => !!props.placementInfo)
-
-// --- Helper Functions ---
-const formatDate = dateString => {
-	const date = new Date(dateString)
-	return date.toLocaleDateString("ru-RU", {
-		day: "2-digit",
-		month: "2-digit",
-		year: "numeric",
-	})
-}
-
 // --- State ---
-const loading = ref(false)
-const error = ref(null)
-const BX24 = inject("BX24")
-
-// Filters
-const selectedEntityType = ref(null)
+const selectedEntityType = ref("companies")
 const dateRange = ref([])
-const appliedDateRange = ref([]) // Фактически примененный диапазон дат
+const appliedDateRange = ref([])
 const faqDialog = ref(false)
 
-// Опции для селектов
 const entityTypes = [
 	{ title: "Компании", value: "companies" },
 	{ title: "Контакты", value: "contacts" },
 	{ title: "Сделки", value: "deals" },
 ]
 
-// --- Widget Logic ---
-onMounted(() => {
-	if (isWidgetMode.value) {
-		const placement = props.placementInfo.placement
-		// By default, show deals related to a company/contact, or company related to a deal.
-		if (
-			placement === "CRM_COMPANY_DETAIL_TAB" ||
-			placement === "CRM_CONTACT_DETAIL_TAB"
-		) {
-			selectedEntityType.value = "deals"
-		} else if (placement === "CRM_DEAL_DETAIL_TAB") {
-			selectedEntityType.value = "companies"
-		}
-	} else {
-		// Default view for the main app
-		selectedEntityType.value = "companies"
-	}
-})
-
-// Метод для применения фильтра по дате
 const applyFilter = () => {
 	appliedDateRange.value = [...dateRange.value]
 }
 
-// Общие фильтры для передачи в дочерние компоненты
 const filters = computed(() => {
 	const filterObj = {}
 
-	if (isWidgetMode.value) {
-		const entityId = props.placementInfo.options.ID
-		const placement = props.placementInfo.placement
-
-		if (selectedEntityType.value === "deals") {
-			if (placement === "CRM_COMPANY_DETAIL_TAB") {
-				filterObj["COMPANY_ID"] = entityId
-			} else if (placement === "CRM_CONTACT_DETAIL_TAB") {
-				filterObj["CONTACT_ID"] = entityId
-			}
-		} else if (selectedEntityType.value === "companies") {
-			if (placement === "CRM_DEAL_DETAIL_TAB") {
-				// We need to find the company of this deal. This requires an extra call.
-				// This logic will be handled inside the CompanyReport component.
-				filterObj["DEAL_ID_FOR_COMPANY"] = entityId
-			}
-		} else if (selectedEntityType.value === "contacts") {
-			// Similar logic if we want to find contacts for a deal/company
-		}
-
-		return filterObj
-	}
-
 	if (appliedDateRange.value && appliedDateRange.value.length > 0) {
-		// Для диапазона дат
 		if (appliedDateRange.value.length > 1) {
 			const startDate = new Date(appliedDateRange.value[0])
 			startDate.setHours(0, 0, 0, 0)
@@ -262,9 +185,7 @@ const filters = computed(() => {
 
 			filterObj[">=DATE_CREATE"] = startDate.toISOString()
 			filterObj["<=DATE_CREATE"] = endDate.toISOString()
-		}
-		// Для одной даты
-		else {
+		} else {
 			const singleDate = new Date(appliedDateRange.value[0])
 			const startOfDay = new Date(singleDate)
 			startOfDay.setHours(0, 0, 0, 0)
